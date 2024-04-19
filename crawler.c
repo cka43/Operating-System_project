@@ -89,14 +89,44 @@ char *dequeue(URLQueue *queue) {
 
 
 // Function to parse HTML content and extract links
-void parseHTML(const char *html_content, URLQueue *queue) {
-    // Implement HTML parsing logic here
-    // Extract links and enqueue them into the queue
-    // Example:
-    // enqueue(queue, "https://example.com/page1");
-    // enqueue(queue, "https://example.com/page2");
-}
+void parseHTML(const char *html_content, URLQueue *queue, const char *search_query) {
+    htmlDocPtr doc;
+    xmlNodePtr cur;
 
+    // Parse the HTML content
+    doc = htmlReadMemory(html_content, strlen(html_content), NULL, NULL, HTML_PARSE_RECOVER | HTML_PARSE_NOERROR | HTML_PARSE_NOWARNING);
+    if (doc == NULL) {
+        fprintf(stderr, "Error: Unable to parse HTML content\n");
+        return;
+    }
+
+    // Traverse the DOM tree to find anchor tags (links)
+    cur = xmlDocGetRootElement(doc);
+    if (cur == NULL) {
+        fprintf(stderr, "Error: Empty HTML document\n");
+        xmlFreeDoc(doc);
+        return;
+    }
+
+    // Iterate through the document to find anchor tags
+    for (cur = cur->children; cur != NULL; cur = cur->next) {
+        if (cur->type == XML_ELEMENT_NODE && xmlStrcmp(cur->name, (const xmlChar *)"a") == 0) {
+            xmlChar *href = xmlGetProp(cur, (const xmlChar *)"href");
+            if (href != NULL) {
+                char *url = (char *)href;
+                // Check if the link contains the search query
+                if (strstr(url, search_query) != NULL) {
+                    // Enqueue the URL if it matches the search query
+                    enqueue(queue, url);
+                }
+                xmlFree(href);
+            }
+        }
+    }
+
+    xmlFreeDoc(doc);
+    xmlCleanupParser();
+}
 // Function to fetch and process a URL.
 void *fetch_url(void *arg) {
     CrawlerParams *params = (CrawlerParams *)arg;
