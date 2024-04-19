@@ -142,9 +142,12 @@ void *fetch_url(void *arg) {
 
         // TODO: Fetch the URL and process its content
         // Example: Fetch HTML content from the URL
+        char str[100];
 
+        printf("Search what you want: ");
+        fgets(str, sizeof(str), stdin);
         // Simulate parsing HTML content
-        parseHTML("<html><body><a href='https://example.com/page1'>Page 1</a></body></html>", queue);
+        parseHTML("<html><body><a href='https://example.com/page1'>Page 1</a></body></html>", queue,str);
 
         free(url); // Free the URL after processing
     }
