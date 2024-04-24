@@ -43,7 +43,7 @@ void *fetch_url(void *arg) {
 
     // URL to fetch (replace google.com with the desired URL)
     const char *url = "http://google.com";
-
+    fprintf("Using Google.com\n");
     curl_easy_setopt(curl, CURLOPT_URL, url);
 
     char response_buffer[4096];
