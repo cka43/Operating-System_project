@@ -78,7 +78,6 @@ char *dequeue(URLQueue *queue) {
 
 // Function to handle received data from cURL.
 size_t write_data(void *ptr, size_t size, size_t nmemb, void *userdata) {
-    // Here you can process the received data if needed.
     return size * nmemb;
 }
 
@@ -93,16 +92,6 @@ void *fetch_url(void *arg) {
         return NULL;
     }
 
-    // Regular expression for extracting links from HTML content
-    regex_t regex;
-    const char *pattern = "<a\\s+href=\"([^\"]+)\"";
-    if (regcomp(&regex, pattern, REG_EXTENDED) != 0) {
-        fprintf(stderr, "Error: Unable to compile regular expression\n");
-        curl_easy_cleanup(curl);
-        return NULL;
-    }
-
-    // Set the write callback function
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
 
     while (true) {
@@ -116,9 +105,9 @@ void *fetch_url(void *arg) {
         if (max_depth > 0) {
             curl_easy_setopt(curl, CURLOPT_URL, url);
 
+            // Perform HTTP request
             char response_buffer[4096];
             curl_easy_setopt(curl, CURLOPT_WRITEDATA, response_buffer);
-
             CURLcode res = curl_easy_perform(curl);
             if (res != CURLE_OK) {
                 fprintf(stderr, "Error: cURL request failed: %s\n", curl_easy_strerror(res));
@@ -126,37 +115,43 @@ void *fetch_url(void *arg) {
                 continue;
             }
 
-            regmatch_t matches[2];
+            // Parse HTML response for URLs
+            const char *start_tag = "<a href=\"";
+            const char *end_tag = "\"";
             const char *ptr = response_buffer;
-            while (regexec(&regex, ptr, 2, matches, 0) == 0) {
-                char extracted_url[MAX_URL_LENGTH];
-                int len = matches[1].rm_eo - matches[1].rm_so;
-                if (len < MAX_URL_LENGTH) {
-                    strncpy(extracted_url, ptr + matches[1].rm_so, len);
-                    extracted_url[len] = '\0';
-                    enqueue(queue, extracted_url);
+            while ((ptr = strstr(ptr, start_tag)) != NULL) {
+                ptr += strlen(start_tag);
+                const char *end_ptr = strstr(ptr, end_tag);
+                if (end_ptr) {
+                    char extracted_url[MAX_URL_LENGTH];
+                    int len = end_ptr - ptr;
+                    if (len < MAX_URL_LENGTH) {
+                        strncpy(extracted_url, ptr, len);
+                        extracted_url[len] = '\0';
+                        printf("Extracted URL: %s\n", extracted_url); // Print extracted URL
+                        enqueue(queue, extracted_url);
+                    }
+                    ptr = end_ptr;
+                } else {
+                    break;
                 }
-                ptr += matches[0].rm_eo;
             }
         }
 
         free(url);
     }
 
-    regfree(&regex);
     curl_easy_cleanup(curl);
 
     return NULL;
 }
 
-// Main function to drive the web crawler.
 int main(int argc, char *argv[]) {
     if (argc != 2) {
         fprintf(stderr, "Usage: %s <starting-url|max-depth>\n", argv[0]);
         return EXIT_FAILURE;
     }
 
-    // Splitting the input argument into URL and maximum depth
     char *start_url = strtok(argv[1], "|");
     char *depth_str = strtok(NULL, "|");
     if (start_url == NULL || depth_str == NULL) {
@@ -173,15 +168,12 @@ int main(int argc, char *argv[]) {
     URLQueue queue;
     initQueue(&queue);
 
-    // Add starting URL to the queue
     enqueue(&queue, start_url);
-
-    // Set up crawler parameters
-    CrawlerParams params = {&queue, max_depth};
 
     pthread_t threads[NUM_THREADS];
 
-    // Create worker threads
+    CrawlerParams params = {&queue, max_depth};
+
     for (int i = 0; i < NUM_THREADS; i++) {
         if (pthread_create(&threads[i], NULL, fetch_url, (void *)&params) != 0) {
             perror("Error: Failed to create thread");
@@ -189,7 +181,6 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // Join threads after completion
     for (int i = 0; i < NUM_THREADS; i++) {
         if (pthread_join(threads[i], NULL) != 0) {
             perror("Error: Failed to join thread");
