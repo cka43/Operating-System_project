@@ -76,46 +76,78 @@ char *dequeue(URLQueue *queue) {
     return url;
 }
 
-// Function to fetch and process a URL using cURL.
+// Function to handle received data from cURL.
+size_t write_data(void *ptr, size_t size, size_t nmemb, void *userdata) {
+    // Here you can process the received data if needed.
+    return size * nmemb;
+}
+
 void *fetch_url(void *arg) {
     CrawlerParams *params = (CrawlerParams *)arg;
     URLQueue *queue = params->queue;
     int max_depth = params->max_depth;
+    FILE *output_file = params->output_file;
 
     CURL *curl = curl_easy_init();
     if (!curl) {
-        perror("Error: Unable to initialize cURL");
+        fprintf(stderr, "Error: Unable to initialize cURL\n");
         return NULL;
     }
+
+    // Regular expression for extracting links from HTML content
+    regex_t regex;
+    const char *pattern = "<a\\s+href=\"([^\"]+)\"";
+    if (regcomp(&regex, pattern, REG_EXTENDED) != 0) {
+        fprintf(stderr, "Error: Unable to compile regular expression\n");
+        curl_easy_cleanup(curl);
+        return NULL;
+    }
+
+    // Set the write callback function
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
 
     while (true) {
         char *url = dequeue(queue);
         if (url == NULL) {
-            // Queue is empty, exit thread
             break;
         }
 
-        // Print fetched URL
         printf("Fetched URL: %s\n", url);
 
-        // Process URL at current depth
         if (max_depth > 0) {
-            // Perform cURL request
             curl_easy_setopt(curl, CURLOPT_URL, url);
-            // Set the option to follow redirects
-            curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
 
-            // Perform the HTTP request
+            char response_buffer[4096];
+            curl_easy_setopt(curl, CURLOPT_WRITEDATA, response_buffer);
+
             CURLcode res = curl_easy_perform(curl);
             if (res != CURLE_OK) {
-                fprintf(stderr, "cURL request failed: %s\n", curl_easy_strerror(res));
+                fprintf(stderr, "Error: cURL request failed: %s\n", curl_easy_strerror(res));
+                free(url);
+                continue;
             }
+
+            regmatch_t matches[2];
+            const char *ptr = response_buffer;
+            while (regexec(&regex, ptr, 2, matches, 0) == 0) {
+                char extracted_url[MAX_URL_LENGTH];
+                int len = matches[1].rm_eo - matches[1].rm_so;
+                if (len < MAX_URL_LENGTH) {
+                    strncpy(extracted_url, ptr + matches[1].rm_so, len);
+                    extracted_url[len] = '\0';
+                    enqueue(queue, extracted_url);
+                }
+                ptr += matches[0].rm_eo;
+            }
+
+            fprintf(output_file, "%s\n", url);
+            fflush(output_file);
         }
 
-        free(url); // Free the URL after processing
+        free(url);
     }
 
-    // Cleanup cURL handle
+    regfree(&regex);
     curl_easy_cleanup(curl);
 
     return NULL;
